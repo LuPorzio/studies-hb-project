@@ -11,7 +11,7 @@ def _():
     import pandas as pd
     import seaborn as sns
     import altair as alt
-    return alt, mo, pd
+    return alt, mo, np, pd, sns
 
 
 @app.cell(hide_code=True)
@@ -317,11 +317,130 @@ def _(td_df):
     # remove observations from 1 am to 5 am
     td_df_cleaned = td_df.set_index('date_not').between_time(start_time='5:00am', end_time='1:00am').reset_index()
     td_df_cleaned.head(20)
+    return (td_df_cleaned,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Determine contributions
+    We now try to determine the users that answered and those who did not by quantifying the number of datapoints collected about them.
+
+    We consider valid answers those that are not reported with a `No information` tag.
+    """)
     return
 
 
 @app.cell
-def _():
+def _(td_df_cleaned):
+    # filter for informative interactions
+    # group by id and whether the observation was gathered from the first two weeks 
+    # or the second two weeks (first2w)
+
+    valid_answers_agg = td_df_cleaned.query("what != 'No information'").groupby(['id', 'first2w'])
+    valid_answers_df = valid_answers_agg.agg(valid_answers = ('what', 'size')).sort_values('valid_answers').reset_index()
+
+    valid_answers_df
+    return (valid_answers_df,)
+
+
+@app.cell
+def _(sns, valid_answers_df):
+    _grid = sns.FacetGrid(valid_answers_df.sort_values('first2w'), col = "first2w")
+    _grid.map(sns.histplot, "valid_answers")
+    return
+
+
+@app.cell
+def _(valid_answers_df):
+    valid_answers_df.describe()
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    from the plots above we notice that the interactions in the first two weeks extend over a range that is bigger than that of the second two weeks.
+    """)
+    return
+
+
+@app.cell
+def _(valid_answers_df):
+    # top 10 contributors overall
+    valid_answers_df.sort_values('valid_answers', ascending = False).head(10)
+    return
+
+
+@app.cell
+def _(valid_answers_df):
+    # bottom 10 contributors overall
+    valid_answers_df.sort_values('valid_answers', ascending = True).head(10)
+    return
+
+
+@app.cell
+def _(valid_answers_df):
+    # valid_answers_agg_describe = td_df_cleaned.query("what != 'No information'").groupby(['first2w'])
+
+    valid_answers_first_df = valid_answers_df.query("first2w == 'First two weeks'")
+    valid_answers_second_df = valid_answers_df.query("first2w != 'First two weeks'")
+
+    describe_valid_first_week_df = valid_answers_first_df.describe().T
+    describe_valid_second_week_df = valid_answers_second_df.query("first2w != 'First two weeks'").describe().T
+    describe_valid_first_week_df
+    return (
+        describe_valid_first_week_df,
+        describe_valid_second_week_df,
+        valid_answers_first_df,
+        valid_answers_second_df,
+    )
+
+
+@app.cell
+def _(describe_valid_second_week_df):
+    describe_valid_second_week_df
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    Based on the quantiles reported above, we can try to divide the participants into groups based on their level of contribution. Then we can look for intra-group patterns.
+
+    We can divide into three groups:
+    1. low contribution $\rightarrow$ those below 50p
+    2. average contribution $\rightarrow$ those from 50p to 75p
+    3. outstanding contribution $\rightarrow$ those above the 75p
+
+    From now on we work on the two subsets represented by first or second two weeks.
+    """)
+    return
+
+
+@app.cell
+def _(describe_valid_first_week_df, describe_valid_second_week_df):
+    fw50p, fw75p = describe_valid_first_week_df.loc["valid_answers"].loc["50%"], describe_valid_first_week_df.loc["valid_answers"].loc["75%"]
+
+    sw50p, sw75p = describe_valid_second_week_df.loc["valid_answers"].loc["50%"], describe_valid_first_week_df.loc["valid_answers"].loc["75%"]
+    return fw50p, fw75p, sw50p, sw75p
+
+
+@app.cell
+def _(
+    fw50p,
+    fw75p,
+    np,
+    sw50p,
+    sw75p,
+    valid_answers_first_df,
+    valid_answers_second_df,
+):
+    valid_answers_first_df.loc[:, "contribution_level"] = np.where(valid_answers_first_df['valid_answers'] < fw50p, 'low',
+                                                           np.where(valid_answers_first_df['valid_answers'] < fw75p, 'average', 'outstanding'))
+
+    valid_answers_second_df.loc[:, "contribution_level"] = np.where(valid_answers_second_df['valid_answers'] < sw50p, 'low',
+                                                           np.where(valid_answers_second_df['valid_answers'] < sw75p, 'average', 'outstanding'))
     return
 
 
