@@ -1,0 +1,721 @@
+import marimo
+
+__generated_with = "0.18.0"
+app = marimo.App(width="medium")
+
+
+@app.cell
+def _():
+    import marimo as mo
+    import pandas as pd
+    import numpy as np
+    from pathlib import Path
+    return Path, mo, pd
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    # Event-level dataset: mood & smartphone use
+
+    Obiettivo:
+    - Costruire un dataset a livello **evento di mood**:
+      - mood attuale (`A6a`)
+      - mood precedente
+      - cambiamento di mood (`delta_mood`) e categoria (migliora/uguale/peggiora)
+    - Ricostruire l’uso del telefono tra una notifica e la successiva:
+      - tempo di uso (o numero di ping) per:
+        - app **social**
+        - app di **comunicazione**
+        - **altre** app
+    - Tenere solo utenti **validi** (secondo le soglie definite sul time diary)
+    - Aggiungere variabili socio-demografiche.
+
+    L’output finale viene salvato in:
+    `./data/processed/eventlevel_mood_phoneuse.parquet`
+    """)
+    return
+
+
+@app.cell
+def _(Path, pd):
+    # percorsi ai file di input
+    appregress_path = Path("./data/app4regress_IT_new_v2.parquet")
+    appuse_path = Path("./data/appuseIT_class_17_11.parquet")
+    td_summary_path = Path("./data/processed/td_participation_summary.parquet")
+    socio_path = Path("./data/processed/socio_demo_cleaned.parquet")
+
+    appregress_df = pd.read_parquet(appregress_path)
+    appuse_df = pd.read_parquet(appuse_path)
+    participation_summary = pd.read_parquet(td_summary_path)
+    socio_df_clean = pd.read_parquet(socio_path)
+
+    appregress_df.shape, appuse_df.shape, participation_summary.shape, socio_df_clean.shape
+    return appregress_df, appuse_df, participation_summary, socio_df_clean
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 1.a – Quick peek dei dataset
+    """)
+    return
+
+
+@app.cell
+def _(appregress_df, appuse_df, participation_summary, socio_df_clean):
+    appregress_df.head(), appuse_df.head(), participation_summary.head(), socio_df_clean.head()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 2 – Costruzione dataset evento-per-evento di mood
+
+    Usiamo `app4regress_IT_new_v2.parquet`, che contiene:
+    - `userid`
+    - `timestamp`
+    - `A6a` (mood attuale)
+    - `delta_mood1` (differenza con la misurazione precedente, già calcolata)
+
+    Costruiamo:
+    - `mood_prev`
+    - `delta_mood` (A6a - mood_prev)
+    - `mood_change_cat` ∈ {migliora, uguale, peggiora}
+    - `event_id` (indice evento per utente)
+    """)
+    return
+
+
+@app.cell
+def _(appregress_df, pd):
+    mood_df = (
+        appregress_df[["userid", "timestamp", "A6a", "delta_mood1"]]
+        .copy()
+        .sort_values(["userid", "timestamp"])
+    )
+
+    # timestamp sicuro come datetime
+    mood_df["timestamp"] = pd.to_datetime(mood_df["timestamp"])
+
+    # mood precedente per utente
+    mood_df["mood_prev"] = mood_df.groupby("userid")["A6a"].shift(1)
+
+    # delta_mood: calcoliamo sempre noi la differenza con la misura precedente
+    mood_df["delta_mood"] = mood_df["A6a"] - mood_df["mood_prev"]
+
+        # categoria di cambiamento
+    def categorize_delta(d):
+            if pd.isna(d):
+                return pd.NA
+            if d > 0:
+                return "migliora"
+            elif d < 0:
+                return "peggiora"
+            else:
+                return "uguale"
+
+    mood_df["mood_change_cat"] = mood_df["delta_mood"].apply(categorize_delta)
+
+        # id evento per utente
+    mood_df["event_id"] = mood_df.groupby("userid").cumcount() + 1
+
+    mood_df.head(20)
+    return (mood_df,)
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(mood_df):
+    # confronto tra delta_mood1 (fornito) e delta calcolato da noi
+    diff = mood_df["delta_mood"] - mood_df["delta_mood1"]
+    diff.value_counts(dropna=False).head()
+
+
+    #Abbiamo verificato che la variabile pre-calcolata delta_mood1 coincide con la differenza calcolata da noi
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 3 – Utenti validi (da time diary)
+
+    Partiamo da `td_participation_summary.parquet` e ricostruiamo:
+
+    - `valid_user_period` (per ciascun periodo, usando le soglie)
+    - `valid_user_overall` (utente valido **almeno in un periodo**)
+
+    Poi teniamo solo gli eventi di mood di utenti validi.
+    """)
+    return
+
+
+@app.cell
+def _(participation_summary):
+    participation_summary_clean = participation_summary.copy()
+
+    # soglie per periodo: riprese dallo script del time diary
+    def is_valid_user(row):
+        if row["first2w"] == "First two weeks":
+            return (row["mean_valid_per_day"] >= 30) and (row["days_with_valid"] >= 14)
+        else:  # Second two weeks
+            return (row["mean_valid_per_day"] >= 12) and (row["days_with_valid"] >= 5)
+
+    participation_summary_clean["valid_user_period"] = participation_summary_clean.apply(is_valid_user, axis=1)
+
+    # validità complessiva: utente valido almeno in un periodo
+    valid_overall = (
+        participation_summary_clean
+        .groupby("id", as_index=False)["valid_user_period"]
+        .any()
+        .rename(columns={"valid_user_period": "valid_user_overall"})
+    )
+
+    participation_summary_clean.head(), valid_overall.head()
+    # soglie per periodo: riprese dallo script del time diary
+    def is_valid_user(row):
+        if row["first2w"] == "First two weeks":
+            return (row["mean_valid_per_day"] >= 30) and (row["days_with_valid"] >= 14)
+        else:  # Second two weeks
+            return (row["mean_valid_per_day"] >= 12) and (row["days_with_valid"] >= 5)
+
+    participation_summary["valid_user_period"] = participation_summary.apply(is_valid_user, axis=1)
+
+    # validità complessiva: utente valido almeno in un periodo
+    valid_overall = (
+        participation_summary
+        .groupby("id", as_index=False)["valid_user_period"]
+        .any()   #true se l’utente è valido in almeno uno dei due periodifalse solo se è NON valido in entrambi.
+        .rename(columns={"valid_user_period": "valid_user_overall"})
+    )
+
+    participation_summary_clean.head(), valid_overall.head()
+
+
+    #valid_user_overall = utente valido in almeno uno dei due periodi (any()):se è valido in prime 2 settimane ma non nelle seconde → resta;se è valido solo dopo → resta;se non è mai valido → escluso.
+    return (valid_overall,)
+
+
+@app.cell
+def _(mood_df, valid_overall):
+    # rinominiamo id -> userid per fare merge con appregress
+    valid_users = valid_overall.rename(columns={"id": "userid"})
+
+    # teniamo solo utenti con valid_user_overall == True
+    valid_users = valid_users.query("valid_user_overall == True")
+
+    mood_valid_df = mood_df.merge(
+        valid_users[["userid", "valid_user_overall"]],
+        on="userid",
+        how="inner",
+    )
+
+    mood_valid_df.head(15), valid_users["userid"].nunique()
+    return (mood_valid_df,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 4 – Intervalli tra notifiche
+
+    Per ogni evento di mood (tranne il primo per utente) definiamo:
+
+    - `t_prev` = timestamp della notifica precedente
+    - `t_curr` = timestamp della notifica corrente
+
+    Useremo questi intervalli per aggregare l’uso del telefono tra le due notifiche.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    **Nota sulla scelta della finestra temporale**
+
+    In questa analisi aggreghiamo l’uso dello smartphone **nell’intero intervallo tra una notifica di mood e la successiva**.
+    L’idea è che il mood rilevato a T1 rifletta (almeno in parte) le attività svolte dopo la misurazione precedente T0.
+
+    Siamo consapevoli che esistono altre strategie possibili (es. finestre più brevi
+    o centrate sulla notifica) e che ogni scelta ha implicazioni. Se necessario
+    potremmo testare anche specifiche alternative, ma qui usiamo l’intervallo
+    T0–T1 perché è la scelta più coerente con la nostra domanda di ricerca.
+    """)
+    return
+
+
+@app.cell
+def _(mood_valid_df):
+    # partiamo da mood_valid_df (creato nella cella precedente)
+    mood_valid_sorted = mood_valid_df.sort_values(["userid", "timestamp"]).copy()
+
+    mood_valid_sorted["t_curr"] = mood_valid_sorted["timestamp"]
+    mood_valid_sorted["t_prev"] = mood_valid_sorted.groupby("userid")["t_curr"].shift(1)
+
+    # teniamo solo gli eventi che hanno una notifica precedente definita
+    mood_interval_df = mood_valid_sorted.dropna(subset=["t_prev"]).copy()
+
+    mood_interval_df[[
+        "userid",
+        "event_id",
+        "t_prev",
+        "t_curr",
+        "A6a",
+        "mood_prev",
+        "delta_mood",
+        "mood_change_cat",
+    ]].head(30)
+    return (mood_interval_df,)
+
+
+@app.cell
+def _(mood_interval_df):
+    # aggiungiamo la durata dell'intervallo tra due EMA
+
+    # 1) durata in minuti
+    mood_interval_df["delta_t_min"] = (
+        (mood_interval_df["t_curr"] - mood_interval_df["t_prev"])
+        .dt.total_seconds() / 60
+    )
+
+    # 2) durata in ore
+    mood_interval_df["delta_t_hours"] = mood_interval_df["delta_t_min"] / 60
+
+    # 3) descrittive della durata (in minuti) con alcuni quantili
+    mood_interval_df["delta_t_min"].describe(
+        percentiles=[0.25, 0.5, 0.75, 0.9, 0.95]
+    )
+
+    # 4) preview per controllare che tutto abbia senso
+    mood_interval_df[[
+        "userid", "event_id", "t_prev", "t_curr",
+        "delta_t_min", "delta_t_hours",
+        "A6a", "mood_prev", "delta_mood", "mood_change_cat",
+    ]].head(20)
+
+    return
+
+
+@app.cell
+def _(mood_interval_df, pd):
+    # distribuzione della durata degli intervalli tra due EMA
+
+    # fasce di durata in MINUTI
+    bins = [0, 30, 60, 90, 120, 240, 480, 1440]  # 0–30, 30–60, 60–90, ecc.
+    labels = [
+        "0–30 min",
+        "30–60 min",
+        "60–90 min",
+        "90–120 min",
+        "2–4 h",
+        "4–8 h",
+        "8–24 h",
+    ]
+
+    # categorizziamo ogni intervallo nella sua fascia
+    delta_cat = pd.cut(
+        mood_interval_df["delta_t_min"],
+        bins=bins,
+        labels=labels,
+        right=True
+    )
+
+    # calcoliamo la proporzione di intervalli in ogni fascia
+    dist = (
+        delta_cat.value_counts(dropna=True, normalize=True)
+        .sort_index()
+        .rename("proportion")
+        .reset_index()
+    )
+
+    dist
+
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    #Preparazione app use:
+    - togliamo 'android' (processo di sistema)
+    - convertiamo timestamp in datetime
+    - creiamo la macro-categoria:
+      * communication: chat, chiamate, email
+      * social: social network, tiktok, ecc.
+      * other: tutto il resto
+    "\"\"
+    """)
+    return
+
+
+@app.cell
+def _(appuse_df, pd):
+    """
+    Cella 5 – Preparazione app use:
+    - togliamo 'android' (processo di sistema)
+    - convertiamo timestamp in datetime
+    - creiamo la macro-categoria:
+      * communication: chat, chiamate, email
+      * social: social network, tiktok, ecc.
+      * other: tutto il resto
+    """
+
+    # 1) filtro di base: rimuoviamo il package 'android'
+    appuse_prepped = appuse_df.query("applicationname != 'android'").copy()
+
+    # 2) timestamp a datetime
+    appuse_prepped["timestamp"] = pd.to_datetime(appuse_prepped["timestamp"])
+
+    # 3) funzione per macro-categoria
+    def map_macro(pkg: str) -> str:
+        p = str(pkg).lower()
+
+        # --- communication (chat, telefonate, email) ---
+        comm_keywords = [
+            "whatsapp",          # com.whatsapp
+            "telegram",          # org.telegram.messenger
+            "messenger",         # eventuali messenger
+            "android.gm",        # gmail (package)
+            "gmail",
+            "mail",
+            "incallui",          # interfaccia chiamate
+            "dialer",
+            "sms",
+            "phone",             # com.samsung.android.phone ecc.
+        ]
+        if any(k in p for k in comm_keywords):
+            return "communication"
+
+        # --- social (social network, tiktok, ecc.) ---
+        social_keywords = [
+            "instagram",         # com.instagram.android
+            "facebook.katana",   # com.facebook.katana
+            "facebook",
+            "twitter",           # com.twitter.android
+            "musically",         # tiktok
+            "tiktok",
+            "snapchat",
+            "reddit",
+        ]
+        if any(k in p for k in social_keywords):
+            return "social"
+
+        # --- tutto il resto: launcher, sistema, browser, media, ecc. ---
+        return "other"
+
+    # 4) applica macro-categoria
+    appuse_prepped["macro_cat"] = appuse_prepped["applicationname"].apply(map_macro)
+
+    # controllo veloce (per vedere se ha senso)
+    appuse_prepped[["applicationname", "macro_cat"]].drop_duplicates().head(30)
+    return (appuse_prepped,)
+
+
+@app.cell
+def _():
+    #controllo
+
+    return
+
+
+@app.cell
+def _(appuse_prepped):
+    check_apps = appuse_prepped[
+        appuse_prepped["applicationname"].isin([
+            "com.whatsapp",
+            "org.telegram.messenger",
+            "com.instagram.android",
+            "com.facebook.katana",
+            "com.twitter.android"
+        ])
+    ][["applicationname", "macro_cat"]].drop_duplicates()
+
+    check_apps
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(appuse_prepped):
+    """
+    Top app con macro-categoria:
+    - controlliamo che la classificazione social / communication / other abbia senso
+    sulle app più usate.
+    """
+
+    top_apps_with_macro = (
+        appuse_prepped
+        .groupby(["applicationname", "macro_cat"], as_index=False)
+        .agg(n_records=("userid", "size"))
+        .sort_values("n_records", ascending=False)
+        .head(50)
+    )
+
+    top_apps_with_macro
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 6 – Uso del telefono tra due notifiche
+
+    Idea:
+    - per ogni intervallo [t_prev, t_curr) di un evento di mood
+    - prendiamo i ping di `appuse_df` con stesso `userid` e `timestamp` compreso nell'intervallo
+    - aggreghiamo il numero di ping (o unità di tempo) per macro-categoria.
+
+    Usiamo `merge_asof` per associare ogni ping al precedente `t_prev` dello stesso utente.
+
+    cioè capire quante volte l’utente ha usato il telefono in quel pezzo di tempo,
+    e per ogni ping di uso app (righe di appuse_prepped):
+    """)
+    return
+
+
+@app.cell
+def _(appuse_prepped, mood_interval_df, pd):
+    # 6 – Uso del telefono tra due notifiche
+    # Obiettivo: per ogni ping di app capire in quale intervallo [t_prev, t_curr) cade.
+
+    # Copie di lavoro
+    appuse_for_merge = appuse_prepped.copy()
+    mood_intervals_for_merge = mood_interval_df.copy()
+
+    # 1. Chiavi temporali coerenti (stesso dtype esatto)
+    #    - ts_app: timestamp dei ping di app
+    #    - t_prev_key: inizio intervallo EMA
+    appuse_for_merge["ts_app"] = pd.to_datetime(appuse_for_merge["timestamp"]).astype("datetime64[ns]")
+    mood_intervals_for_merge["t_prev_key"] = pd.to_datetime(mood_intervals_for_merge["t_prev"]).astype("datetime64[ns]")
+    mood_intervals_for_merge["t_curr"] = pd.to_datetime(mood_intervals_for_merge["t_curr"]).astype("datetime64[ns]")
+
+    # allineiamo il tipo di userid (int) in entrambi i dataset
+    appuse_for_merge["userid"] = appuse_for_merge["userid"].astype(int)
+    mood_intervals_for_merge["userid"] = mood_intervals_for_merge["userid"].astype(int)
+
+    merged_list = []
+
+    # 2. Merge utente per utente
+    for uid, user_logs in appuse_for_merge.groupby("userid"):
+
+        # intervalli EMA di quell'utente
+        user_intervals = (
+            mood_intervals_for_merge
+            .loc[mood_intervals_for_merge["userid"] == uid]
+            .sort_values("t_prev_key")
+            .copy()
+        )
+        if user_intervals.empty:
+            # utente che non ha EMA validi -> saltiamo
+            continue
+
+        # ordiniamo i ping di uso app nel tempo
+        user_logs = user_logs.sort_values("ts_app").copy()
+
+        # per ogni ping di app, agganciamo l'ultimo t_prev precedente (stesso utente)
+        tmp = pd.merge_asof(
+            user_logs,
+            user_intervals,
+            left_on="ts_app",
+            right_on="t_prev_key",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+
+        # teniamo solo i ping compresi nell'intervallo [t_prev, t_curr)
+        tmp = tmp[tmp["ts_app"] < tmp["t_curr"]]
+
+        merged_list.append(tmp)
+
+    # 3. Uniamo tutti gli utenti
+    merged = pd.concat(merged_list, ignore_index=True)
+
+    # 4. Sistemiamo eventuali colonne userid_x / userid_y
+    if "userid_x" in merged.columns:
+        merged = merged.rename(columns={"userid_x": "userid"})
+    if "userid_y" in merged.columns:
+        merged = merged.drop(columns=["userid_y"])
+
+    # 5. Controllo rapido
+    merged[[
+        "userid",
+        "ts_app",           # momento del ping app
+        "applicationname",
+        "macro_cat",
+        "event_id",
+        "t_prev",
+        "t_curr",
+    ]].head(20)
+
+    return (merged,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 7 – Aggregazione: social / communication / other per evento
+
+    Per ogni coppia (`userid`, `event_id`) calcoliamo:
+    - numero di ping (o unità di tempo) per `macro_cat`
+    - e trasformiamo in formato wide:
+      - `use_social`
+      - `use_communication`
+      - `use_other`
+    """)
+    return
+
+
+@app.cell
+def _(merged):
+    # 7 – Aggregazione: social / communication / other per evento
+
+    # per sicurezza
+    merged["event_id"] = merged["event_id"].astype(int)
+
+    # tempo totale di uso per intervallo *categoria*
+    usage_agg = (
+        merged
+        .groupby(["userid", "event_id", "macro_cat"], as_index=False)
+        ["time_use_second_app"]
+        .sum()
+        .rename(columns={"time_use_second_app": "time_use_sec"})
+    )
+
+    # passiamo a formato wide: una colonna per categoria
+    usage_wide = (
+        usage_agg
+        .pivot(index=["userid", "event_id"], columns="macro_cat", values="time_use_sec")
+        .fillna(0)
+        .reset_index()
+    )
+
+    # garantiamo che le tre colonne esistano sempre
+    for cat in ["social", "communication", "other"]:
+        if cat not in usage_wide.columns:
+            usage_wide[cat] = 0
+
+    # rinominiamo le colonne come "use_*"
+    usage_wide = usage_wide.rename(
+        columns={
+            "social": "use_social",
+            "communication": "use_communication",
+            "other": "use_other",
+        }
+    )
+
+    usage_wide.head(20)
+
+    return (usage_wide,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 8 – Dataset finale evento-per-evento
+
+    Merge di:
+    - `mood_interval_df` (mood, delta, categorie, intervalli)
+    - `usage_wide` (uso del telefono tra notifiche)
+    - `socio_df_clean` (variabili socio-demo)
+
+    Output: una riga per **evento di mood**.
+    """)
+    return
+
+
+@app.cell
+def _(mood_interval_df, socio_df_clean, usage_wide):
+    # 8 – Dataset finale evento-per-evento
+
+    def time_of_day(h):
+        if 5 <= h < 12:
+            return "morning"
+        elif 12 <= h < 18:
+            return "afternoon"
+        elif 18 <= h < 24:
+            return "evening"
+        else:
+            return "night"
+
+    event_df = mood_interval_df.merge(
+        usage_wide,
+        on=["userid", "event_id"],
+        how="left",
+    )
+
+    # se per qualche evento non abbiamo uso registrato, mettiamo 0
+    for var in ["use_social", "use_communication", "use_other"]:
+        event_df[var] = event_df[var].fillna(0)
+
+
+    # aggiungiamo ora e fascia oraria dell’evento (t_curr)
+    event_df["hour_curr"] = event_df["t_curr"].dt.hour
+    event_df["time_of_day"] = event_df["hour_curr"].apply(time_of_day)
+
+    # selezione di alcune variabili socio-demo (usa quelle che esistono davvero in socio_df_clean)
+    socio_cols = [
+        "userid",
+        "gender",
+        "degree",
+        "department",
+        "cohort_group",
+    ]
+    socio_small = socio_df_clean[[c for c in socio_cols if c in socio_df_clean.columns]].copy()
+
+    event_df = event_df.merge(socio_small, on="userid", how="left")
+
+    event_df.head(50)
+
+    return (event_df,)
+
+
+@app.cell
+def _(event_df):
+    event_df["userid"].unique()
+    #per vedere quali sono gli id validi
+
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 9 – Salvataggio
+
+    Salviamo il dataset evento-per-evento in:
+
+    `./data/processed/eventlevel_mood_phoneuse.parquet`
+    """)
+    return
+
+
+@app.cell
+def _(Path, event_df):
+    processed_path = Path("./data/processed")
+    processed_path.mkdir(exist_ok=True)
+
+    out_file = processed_path / "eventlevel_mood_phoneuse.parquet"
+    event_df.to_parquet(out_file, index=False)
+
+    out_file
+    return
+
+
+if __name__ == "__main__":
+    app.run()
