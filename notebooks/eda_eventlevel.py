@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.0"
+__generated_with = "0.18.1"
 app = marimo.App(width="medium")
 
 
@@ -13,7 +13,7 @@ def _():
     return Path, mo, pd
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     # Event-level dataset: mood & smartphone use
@@ -40,10 +40,10 @@ def _(mo):
 @app.cell
 def _(Path, pd):
     # percorsi ai file di input
-    appregress_path = Path("./data/app4regress_IT_new_v2.parquet")
-    appuse_path = Path("./data/appuseIT_class_17_11.parquet")
-    td_summary_path = Path("./data/processed/td_participation_summary.parquet")
-    socio_path = Path("./data/processed/socio_demo_cleaned.parquet")
+    appregress_path = Path("../data/app4regress_IT_new_v2.parquet")
+    appuse_path = Path("../data/appuseIT_class_17_11.parquet")
+    td_summary_path = Path("../data/processed/td_participation_summary.parquet")
+    socio_path = Path("../data/processed/socio_demo_cleaned.parquet")
 
     appregress_df = pd.read_parquet(appregress_path)
     appuse_df = pd.read_parquet(appuse_path)
@@ -54,7 +54,7 @@ def _(Path, pd):
     return appregress_df, appuse_df, participation_summary, socio_df_clean
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## 1.a – Quick peek dei dataset
@@ -68,7 +68,7 @@ def _(appregress_df, appuse_df, participation_summary, socio_df_clean):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## 2 – Costruzione dataset evento-per-evento di mood
@@ -141,7 +141,7 @@ def _(mood_df):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## 3 – Utenti validi (da time diary)
@@ -220,7 +220,7 @@ def _(mood_df, valid_overall):
     return (mood_valid_df,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## 4 – Intervalli tra notifiche
@@ -235,7 +235,7 @@ def _(mo):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     **Nota sulla scelta della finestra temporale**
@@ -299,7 +299,6 @@ def _(mood_interval_df):
         "delta_t_min", "delta_t_hours",
         "A6a", "mood_prev", "delta_mood", "mood_change_cat",
     ]].head(20)
-
     return
 
 
@@ -336,7 +335,6 @@ def _(mood_interval_df, pd):
     )
 
     dist
-
     return
 
 
@@ -374,6 +372,8 @@ def _(appuse_df, pd):
 
     # 1) filtro di base: rimuoviamo il package 'android'
     appuse_prepped = appuse_df.query("applicationname != 'android'").copy()
+    appuse_prepped["to_keep"] = ~(appuse_df["applicationname"].str.contains("launcher"))
+    appuse_prepped = appuse_prepped.loc[appuse_prepped["to_keep"]]
 
     # 2) timestamp a datetime
     appuse_prepped["timestamp"] = pd.to_datetime(appuse_prepped["timestamp"])
@@ -426,7 +426,6 @@ def _(appuse_df, pd):
 @app.cell
 def _():
     #controllo
-
     return
 
 
@@ -471,7 +470,7 @@ def _(appuse_prepped):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## 6 – Uso del telefono tra due notifiche
@@ -562,11 +561,10 @@ def _(appuse_prepped, mood_interval_df, pd):
         "t_prev",
         "t_curr",
     ]].head(20)
-
     return (merged,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## 7 – Aggregazione: social / communication / other per evento
@@ -620,11 +618,10 @@ def _(merged):
     )
 
     usage_wide.head(20)
-
     return (usage_wide,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## 8 – Dataset finale evento-per-evento
@@ -681,7 +678,6 @@ def _(mood_interval_df, socio_df_clean, usage_wide):
     event_df = event_df.merge(socio_small, on="userid", how="left")
 
     event_df.head(50)
-
     return (event_df,)
 
 
@@ -689,11 +685,10 @@ def _(mood_interval_df, socio_df_clean, usage_wide):
 def _(event_df):
     event_df["userid"].unique()
     #per vedere quali sono gli id validi
-
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## 9 – Salvataggio
@@ -707,7 +702,7 @@ def _(mo):
 
 @app.cell
 def _(Path, event_df):
-    processed_path = Path("./data/processed")
+    processed_path = Path("../data/processed")
     processed_path.mkdir(exist_ok=True)
 
     out_file = processed_path / "eventlevel_mood_phoneuse.parquet"

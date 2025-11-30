@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.0"
+__generated_with = "0.18.1"
 app = marimo.App(width="medium")
 
 
@@ -15,7 +15,7 @@ def _():
     return Path, alt, mo, pd
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     # EDA – socio_demo_IT.dta
@@ -32,7 +32,7 @@ def _(mo):
 @app.cell
 def _(Path, pd):
     # --- 1. Load data ---
-    data_path = Path("./data/socio_demo_IT.dta")
+    data_path = Path("../data/socio_demo_IT.dta")
     socio_df = pd.read_stata(data_path)
 
     socio_df.head()
@@ -73,7 +73,7 @@ def _(socio_df):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Missing values
@@ -94,7 +94,7 @@ def _(pd, socio_df):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Duplicati e chiavi
@@ -117,7 +117,7 @@ def _(socio_df):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Pulizia minima
@@ -183,25 +183,22 @@ def _(socio_df_clean):
     )
 
     socio_df_clean["cohort_group"].value_counts(dropna=False)
-
     return
 
 
 @app.cell
 def _(socio_df_clean):
     socio_df_clean.dtypes[["userid","gender","degree","cohort","cohort_group","department"]]
-
     return
 
 
 @app.cell
 def _(socio_df_clean):
     socio_df_clean[["userid","gender","degree","cohort","cohort_group"]].head()
-
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Distribuzioni delle variabili socio-demografiche principali
@@ -240,7 +237,7 @@ def _(socio_df_clean):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Variabili psicometriche (Big5, valori M*, intelligenze multiple, ecc.)
@@ -263,7 +260,7 @@ def _(num_cols, socio_df_clean):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     Se vogliamo, possiamo fare qualche istogramma rapido delle scale principali.
@@ -274,9 +271,10 @@ def _(mo):
 
 @app.cell
 def _(alt, socio_df_clean):
+
     # choose some key scales if present
     key_scales = [c for c in ["extraversion", "agreeableness", "conscientiousness",
-                             "neuroticism", "openness"] if c in socio_df_clean.columns]
+                                "neuroticism", "openness"] if c in socio_df_clean.columns]
 
     charts = []
     for c in key_scales:
@@ -284,7 +282,7 @@ def _(alt, socio_df_clean):
             alt.Chart(socio_df_clean)
             .mark_bar()
             .encode(
-                x=alt.X(c, bin=alt.Bin(maxbins=30), title=c),
+                x=alt.X(c, bin=alt.Bin(maxbins=12), title=c),
                 y=alt.Y("count()", title="n")
             )
             .properties(height=220, width="container", title=f"Distribuzione {c}")
@@ -292,10 +290,11 @@ def _(alt, socio_df_clean):
         charts.append(chart)
 
     alt.vconcat(*charts) if charts else None
+    
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Output pulito

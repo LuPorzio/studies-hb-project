@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.0"
+__generated_with = "0.18.1"
 app = marimo.App(width="medium")
 
 
@@ -17,7 +17,7 @@ def _():
     return Path, mo, pd, plt, sns
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     # Analysis – Event-level mood & phone use
@@ -41,7 +41,7 @@ def _(mo):
 
 @app.cell
 def _(Path, pd):
-    data_path = Path("./data/processed/eventlevel_mood_phoneuse.parquet")
+    data_path = Path("../data/processed/eventlevel_mood_phoneuse.parquet")
     event_df = pd.read_parquet(data_path)
 
     event_df.shape, event_df.columns
@@ -101,11 +101,6 @@ def _(event_df, plt, sns):
     plt.ylabel("Frequenza")
     plt.title("Distribuzione del cambiamento di mood")
     plt.show()
-    return
-
-
-@app.cell
-def _():
     return
 
 
@@ -174,7 +169,7 @@ def _(event_df, plt, sns):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     #STEP 2
@@ -183,11 +178,11 @@ def _(mo):
 
 
 @app.cell
-def _(corr_vars, event_df_analysis):
+def _(event_df_analysis):
     #MATRICE DI CORRELAZIONc
-    orr_vars = [
+    corr_vars = [
         "A6a", "delta_mood",
-        "use_social_min", "use_communication_min", "use_other_min",
+        # "use_social_min", "use_communication_min", "use_other_min",
         "delta_t_min"
     ]
 
@@ -280,7 +275,7 @@ def _(event_df_analysis, pd, plt, sns):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     Le analisi descrittive e le correlazioni semplici mostrano che l’uso del telefono tra due notifiche EMA è solo debolmente associato al mood riportato. Le correlazioni tra mood e uso delle app (social, communication, other) sono tutte inferiori a |0.05|, indicando assenza di una relazione lineare semplice. Anche dividendo l'uso social in livelli (low/medium/high), la distribuzione del mood rimane invariata.
@@ -290,7 +285,7 @@ def _(mo):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     #STEP 3
@@ -377,7 +372,7 @@ def _(event_df_analysis, plt, sns):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     #STEP 4
@@ -388,7 +383,6 @@ def _(mo):
 @app.cell
 def _():
     import statsmodels.formula.api as smf
-
     return (smf,)
 
 
@@ -460,7 +454,7 @@ def _(mo):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     Abbiamo stimato un modello di regressione lineare (e un modello multilevel con intercept casuale per utente) per predire il mood momento-per-momento (A6a) a partire dall’uso del telefono tra due notifiche EMA. I predittori principali erano l’uso delle app social, di comunicazione e di altre app (standardizzati), controllando per fascia oraria e genere.
@@ -567,11 +561,10 @@ def _(Path, event_df_analysis, pd, plt, sns):
     plt.title("Uso social per pattern di partecipazione")
     plt.xticks(rotation=15)
     plt.show()
-
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     “Over the weeks” (participation pattern → mood)
@@ -583,7 +576,7 @@ def _(mo):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     #HYPOTHESIS 1
@@ -672,7 +665,6 @@ def _(event_df_analysis, pd, plt, sns):
     plt.ylabel("Mood medio (A6a)")
     plt.title("Mood medio per livello di 'social-dominance' nella routine")
     plt.show()
-
     return
 
 

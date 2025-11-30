@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.0"
+__generated_with = "0.18.1"
 app = marimo.App(width="medium")
 
 
@@ -9,13 +9,14 @@ def _():
     import marimo as mo
     import pandas as pd
     import numpy as np
+    import matplotlib.pyplot as plt
     import seaborn as sns
     import altair as alt
     from pathlib import Path
-    return Path, mo, pd, sns
+    return Path, mo, pd, plt, sns
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     # EDA – Time Diary Participation (STEP 2)
@@ -32,7 +33,7 @@ def _(mo):
 
 @app.cell
 def _(Path, pd):
-    data_path = Path("./data/td_ita.csv")
+    data_path = Path("../data/td_ita.csv")
     td_df = pd.read_csv(data_path, low_memory=False)
     td_df.head()
     return data_path, td_df
@@ -44,7 +45,7 @@ def _(td_df):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Conversione timestamp
@@ -60,7 +61,7 @@ def _(pd, td_df):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Filtro ore non informative (1–5 AM)
@@ -80,7 +81,7 @@ def _(td_df):
     return (td_df_cleaned,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Giorno e risposta valida
@@ -100,7 +101,7 @@ def _(td_df_cleaned):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Notifiche per giorno per utente
@@ -126,7 +127,7 @@ def _(td_df_cleaned):
     return (daylevel_df,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Giorni risposti per utente + summary partecipazione
@@ -161,7 +162,7 @@ def _(daylevel_df):
 
 
 @app.cell
-def _():
+def _(participation_summary):
     """
     Classifichiamo i partecipanti in:
     - low contribution: sotto il 50° percentile di total_valid nel periodo
@@ -203,16 +204,16 @@ def _():
             else:
                 return "outstanding"
 
-    participation_summary = participation_summary.copy()
-    participation_summary["contribution_level"] = participation_summary.apply(
+    participation_summary2 = participation_summary.copy()
+    participation_summary2["contribution_level"] = participation_summary2.apply(
         classify, axis=1
     )
 
-    participation_summary[["id", "first2w", "total_valid", "contribution_level"]].head(20)
-    return (participation_summary,)
+    participation_summary2[["id", "first2w", "total_valid", "contribution_level"]].head(20)
+    return (participation_summary2,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Distribuzioni utili (per decidere soglie)
@@ -240,7 +241,7 @@ def _(participation_summary, sns):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Statistiche per soglie (quantili)
@@ -249,16 +250,14 @@ def _(mo):
 
 
 @app.cell
-def _(participation_summary):
-    participation_summary["valid_user_period"].value_counts()
-
+def _(participation_summary2):
+    participation_summary2["valid_user_period"].value_counts()
     return
 
 
 @app.cell
 def _(valid_overall):
     valid_overall["valid_user_overall"].value_counts()
-
     return
 
 
@@ -282,7 +281,25 @@ def _(participation_summary):
 
     participation_summary["valid_user_period"] = participation_summary.apply(is_valid_user, axis=1)
 
-    participation_summary["valid_user_period"].value_counts(dropna=False)
+    p_summary = participation_summary["valid_user_period"].value_counts(dropna=False)
+    p_summary
+    return
+
+
+@app.cell
+def _(participation_summary):
+    _plot_df = participation_summary.groupby(["first2w", "valid_user_period"]).agg(count = ("total_valid", "size")).reset_index()
+    _plot_df.head()
+    return
+
+
+@app.cell
+def _(participation_summary, plt, sns):
+    _plot_df = participation_summary.groupby(["first2w", "valid_user_period"]).agg(count = ("total_valid", "size")).reset_index()
+    _g = sns.barplot(x = "first2w", y = "count", hue = "valid_user_period", data = _plot_df)
+    plt.legend(loc = "upper left")
+    plt.savefig("../plots/participation.png")
+    _g
     return
 
 
@@ -360,7 +377,7 @@ def _(participation_summary_overall, valid_wide):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Salvataggio output puliti
