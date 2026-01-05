@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.1"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium")
 
 
@@ -476,9 +476,9 @@ def _(Path, event_df_analysis, pd, plt, sns):
     # (ri)calcola valid_user_period con le stesse soglie di eda_timedairy_participation.py
     def is_valid_user(row):
         if row["first2w"] == "First two weeks":
-            return (row["mean_valid_per_day"] >= 30) and (row["days_with_valid"] >= 14)
+            return (row["median_valid_per_day"] >= 30) and (row["days_with_valid"] >= 14)
         else:  # Second two weeks
-            return (row["mean_valid_per_day"] >= 12) and (row["days_with_valid"] >= 5)
+            return (row["median_valid_per_day"] >= 12) and (row["days_with_valid"] >= 5)
 
     participation_summary["valid_user_period"] = participation_summary.apply(is_valid_user, axis=1)
 

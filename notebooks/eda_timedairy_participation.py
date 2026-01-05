@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.1"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium")
 
 
@@ -14,6 +14,28 @@ def _():
     import altair as alt
     from pathlib import Path
     return Path, mo, pd, plt, sns
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # EDA - App Use Participation
+    """)
+    return
+
+
+@app.cell
+def _(Path, pd):
+    data_path_app_use = Path("../data/appuseIT_class_17_11.parquet")
+    app_use = pd.read_parquet(data_path_app_use)
+    app_use.head()
+    return (app_use,)
+
+
+@app.cell
+def _(app_use):
+    app_use.info()
+    return
 
 
 @app.cell
@@ -123,7 +145,7 @@ def _(td_df_cleaned):
         )
     )
 
-    daylevel_df.head(20)
+    daylevel_df.head(200000)
     return (daylevel_df,)
 
 
@@ -136,43 +158,72 @@ def _(mo):
 
 
 @app.cell
-def _(daylevel_df):
-    # giorni con almeno 1 risposta valida
-    days_with_valid = (
-        daylevel_df.assign(has_valid=daylevel_df["notifications_valid"] > 0)
-        .groupby(["id", "first2w"], as_index=False)
-        .agg(days_with_valid=("has_valid", "sum"))
+def _(daylevel_df, pd):
+    # CHANGED ON 05/01
+    # 1. Define validity thresholds for individual periods
+    # (Using the thresholds from your original script logic)
+    def check_period_validity(group):
+        is_f2w = (group["first2w"] == "First two weeks").any()
+        mean_val = group["notifications_valid"].median()
+        days_val = (group["notifications_valid"] > 0).sum()
+
+        if is_f2w:
+            return (mean_val >= 25) and (days_val >= 14)
+        else:
+            return (mean_val >= 12) and (days_val >= 7)
+
+
+    # 2. Identify users valid in BOTH periods
+    validity_per_period = (
+        daylevel_df.groupby(["id", "first2w"])
+        .apply(check_period_validity)
+        .unstack(fill_value=False)
     )
 
-    # summary notifiche/giorno per utente
+    # Users who are True for both "First two weeks" and "Second two weeks"
+    persistent_users = validity_per_period[
+        (validity_per_period["First two weeks"] == True) & 
+        (validity_per_period["Second two weeks"] == True)
+    ].index.tolist()
+
+    # 3. Create the "First 2 Weeks" slice (All valid users for that period)
+    f2w_valid_users = validity_per_period[validity_per_period["First two weeks"] == True].index.tolist()
+    f2w_data = daylevel_df[
+        (daylevel_df["id"].isin(f2w_valid_users)) & 
+        (daylevel_df["first2w"] == "First two weeks")
+    ].copy()
+    f2w_data["first2w"] = "First 2 Weeks"
+
+    # 4. Create the "Whole Period" slice (ONLY users active in both)
+    whole_data = daylevel_df[daylevel_df["id"].isin(persistent_users)].copy()
+    whole_data["first2w"] = "Whole Period"
+
+    # 5. Combine and aggregate
+    combined_data = pd.concat([f2w_data, whole_data])
+
     participation_summary = (
-        daylevel_df.groupby(["id", "first2w"], as_index=False)
+        combined_data.groupby(["id", "first2w"], as_index=False)
         .agg(
-            mean_valid_per_day=("notifications_valid", "mean"),
             median_valid_per_day=("notifications_valid", "median"),
-            mean_total_per_day=("notifications_total", "mean"),
+            days_with_valid=("notifications_valid", lambda x: (x > 0).sum()),
             total_valid=("notifications_valid", "sum"),
-            total_notifications=("notifications_total", "sum"),
         )
-        .merge(days_with_valid, on=["id", "first2w"], how="left")
     )
+    participation_summary.head(20000000)
 
-    participation_summary.head(20)
     return (participation_summary,)
 
 
 @app.cell
-def _(participation_summary):
-    """
-    Classifichiamo i partecipanti in:
+def _(participation_summary, participation_summary2):
+    """Classifichiamo i partecipanti in:
     - low contribution: sotto il 50° percentile di total_valid nel periodo
     - average: tra 50° e 75° percentile
     - outstanding: sopra il 75° percentile
 
     La classificazione è separata per:
     - First two weeks
-    - Second two weeks
-    """
+    - Whole Period"""
 
     # descrittive per total_valid per ogni periodo
     desc = (
@@ -181,15 +232,15 @@ def _(participation_summary):
         .describe(percentiles=[0.5, 0.75])
     )
 
-    fw50p = desc.loc["First two weeks", "50%"]
-    fw75p = desc.loc["First two weeks", "75%"]
+    fw50p = desc.loc["First 2 Weeks", "50%"]
+    fw75p = desc.loc["First 2 Weeks", "75%"]
 
-    sw50p = desc.loc["Second two weeks", "50%"]
-    sw75p = desc.loc["Second two weeks", "75%"]
+    sw50p = desc.loc["Whole Period", "50%"]
+    sw75p = desc.loc["Whole Period", "75%"]
 
     # funzione di classificazione per riga
     def classify(row):
-        if row["first2w"] == "First two weeks":
+        if row["first2w"] == "First 2 Weeks":
             if row["total_valid"] < fw50p:
                 return "low"
             elif row["total_valid"] < fw75p:
@@ -204,12 +255,32 @@ def _(participation_summary):
             else:
                 return "outstanding"
 
-    participation_summary2 = participation_summary.copy()
-    participation_summary2["contribution_level"] = participation_summary2.apply(
+    _participation_summary2 = participation_summary.copy()
+    _participation_summary2["contribution_level"] = participation_summary2.apply(
         classify, axis=1
     )
 
-    participation_summary2[["id", "first2w", "total_valid", "contribution_level"]].head(20)
+    _participation_summary2[["id", "first2w", "total_valid", "contribution_level"]].head(20)
+    return
+
+
+@app.cell
+def _(participation_summary):
+    def classify_fixed(row):
+        # MOTIVATION: 
+        # Low (< 28): Fewer than 2 valid responses per day on average.
+        # Average (28 - 70): Between 2 and 5 responses per day.
+        # Outstanding (> 70): More than 5 responses per day (High Density).
+        if row["total_valid"] < 28:
+            return "low"
+        elif 28 <= row["total_valid"] <= 70:
+            return "average"
+        else:
+            return "outstanding"
+
+    participation_summary2 = participation_summary.copy()
+    participation_summary["contribution_level"] = participation_summary.apply(classify_fixed, axis=1)
+
     return (participation_summary2,)
 
 
@@ -230,7 +301,7 @@ def _(mo):
 @app.cell
 def _(participation_summary, sns):
     _g = sns.FacetGrid(participation_summary, col="first2w", height=3, aspect=1.3)
-    _g.map(sns.histplot, "mean_valid_per_day")
+    _g.map(sns.histplot, "median_valid_per_day")
     return
 
 
@@ -250,8 +321,8 @@ def _(mo):
 
 
 @app.cell
-def _(participation_summary2):
-    participation_summary2["valid_user_period"].value_counts()
+def _(participation_summary):
+    participation_summary["valid_user_period"].value_counts()
     return
 
 
@@ -263,7 +334,7 @@ def _(valid_overall):
 
 @app.cell
 def _(participation_summary):
-    participation_summary.groupby("first2w")[["mean_valid_per_day", "days_with_valid"]].describe().T
+    participation_summary.groupby("first2w")[["median_valid_per_day", "days_with_valid"]].describe().T
     return
 
 
@@ -275,9 +346,9 @@ def _(participation_summary):
 
     def is_valid_user(row):
         if row["first2w"] == "First two weeks":
-            return (row["mean_valid_per_day"] >= 30) and (row["days_with_valid"] >= 14)
+            return (row["median_valid_per_day"] >= 30) and (row["days_with_valid"] >= 14)
         else:  # Second two weeks
-            return (row["mean_valid_per_day"] >= 12) and (row["days_with_valid"] >= 5)
+            return (row["median_valid_per_day"] >= 12) and (row["days_with_valid"] >= 5)
 
     participation_summary["valid_user_period"] = participation_summary.apply(is_valid_user, axis=1)
 
@@ -344,22 +415,26 @@ def _(participation_summary_overall):
 
 
 @app.cell
-def _(valid_wide):
-    def classify_pattern(row):
-        first_ok = row.get("First two weeks", False)
-        second_ok = row.get("Second two weeks", False)
+def _(participation_summary):
+    # CHANGED ON 05/01
+    def _(participation_summary, pd):
+        # Identifying the patterns based on our new analysis_period column
+        # We want to see who appears in 'Whole Period' (which means they were in both)
+        # vs who only appears in 'First 2 Weeks'
 
-        if first_ok and second_ok:
-            return "consistent_high"
-        elif first_ok and not second_ok:
-            return "early_dropout"
-        elif (not first_ok) and second_ok:
-            return "late_joiner"
-        else:
-            return "low_participation"
+        user_counts = participation_summary.groupby("id")["first2w"].nunique()
 
-    valid_wide["participation_pattern"] = valid_wide.apply(classify_pattern, axis=1)
-    valid_wide["participation_pattern"].value_counts()
+        def label_pattern(user_id):
+            # If they appear in 2 periods (First 2 Weeks AND Whole Period), 
+            # it means they passed the 'Persistent' check.
+            if user_counts[user_id] == 2:
+                return "Consistent (Both Periods)"
+            else:
+                return "Early Phase Only"
+
+        participation_summary["participation_pattern"] = participation_summary["id"].apply(label_pattern)
+
+    participation_summary.head(200000)
     return
 
 

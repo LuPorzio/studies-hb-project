@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.1"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium")
 
 
@@ -126,11 +126,6 @@ def _(appregress_df, pd):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(mood_df):
     # confronto tra delta_mood1 (fornito) e delta calcolato da noi
     diff = mood_df["delta_mood"] - mood_df["delta_mood1"]
@@ -138,6 +133,33 @@ def _(mood_df):
 
 
     #Abbiamo verificato che la variabile pre-calcolata delta_mood1 coincide con la differenza calcolata da noi
+    return
+
+
+@app.cell
+def _(mood_df):
+    mood_df["latent_var"] = mood_df["A6a"].map({1:-1.75,
+    2:-0.86,
+    3:0,
+    4:0.86,
+    5:1.75})
+
+    mood_df
+    return
+
+
+@app.cell
+def _(mood_df):
+    mood_df_sorted = mood_df.sort_values(["userid","timestamp"],ascending=True)
+    mood_df_sorted.head()
+    return (mood_df_sorted,)
+
+
+@app.cell
+def _(mood_df_sorted):
+    mood_df_sorted["latent_prev"] = mood_df_sorted["latent_var"].shift(1)
+    mood_df_sorted["latent_change"] = mood_df_sorted["latent_var"] - mood_df_sorted["latent_prev"]
+    mood_df_sorted.head(100)
     return
 
 
@@ -163,9 +185,9 @@ def _(participation_summary):
     # soglie per periodo: riprese dallo script del time diary
     def is_valid_user(row):
         if row["first2w"] == "First two weeks":
-            return (row["mean_valid_per_day"] >= 30) and (row["days_with_valid"] >= 14)
+            return (row["median_valid_per_day"] >= 25) and (row["days_with_valid"] >= 14)
         else:  # Second two weeks
-            return (row["mean_valid_per_day"] >= 12) and (row["days_with_valid"] >= 5)
+            return (row["median_valid_per_day"] >= 12) and (row["days_with_valid"] >= 7)
 
     participation_summary_clean["valid_user_period"] = participation_summary_clean.apply(is_valid_user, axis=1)
 
@@ -178,12 +200,13 @@ def _(participation_summary):
     )
 
     participation_summary_clean.head(), valid_overall.head()
+
     # soglie per periodo: riprese dallo script del time diary
     def is_valid_user(row):
         if row["first2w"] == "First two weeks":
-            return (row["mean_valid_per_day"] >= 30) and (row["days_with_valid"] >= 14)
+            return (row["median_valid_per_day"] >= 25) and (row["days_with_valid"] >= 14)
         else:  # Second two weeks
-            return (row["mean_valid_per_day"] >= 12) and (row["days_with_valid"] >= 5)
+            return (row["median_valid_per_day"] >= 12) and (row["days_with_valid"] >= 7)
 
     participation_summary["valid_user_period"] = participation_summary.apply(is_valid_user, axis=1)
 
@@ -203,20 +226,37 @@ def _(participation_summary):
 
 
 @app.cell
-def _(mood_df, valid_overall):
+def _(appuse_df, valid_overall):
+    # CHANGED ON 05/01
+    # Get unique users who actually have phone logs
+    users_with_phone_data = set(appuse_df["userid"].unique())
+    
+    # Filter valid_overall to only include those who also have phone data
+    valid_users_with_phone = valid_overall[
+        (valid_overall["id"].isin(users_with_phone_data)) & 
+        (valid_overall["valid_user_overall"] == True)
+    ].rename(columns={"id": "userid"})
+    
+    valid_users_with_phone.head(100000000)
+    return (valid_users_with_phone,)
+
+
+@app.cell
+def _(mood_df, valid_users_with_phone):
+    # CHANGED ON 05/01
     # rinominiamo id -> userid per fare merge con appregress
-    valid_users = valid_overall.rename(columns={"id": "userid"})
+    valid_users = valid_users_with_phone.rename(columns={"id": "userid"})
 
     # teniamo solo utenti con valid_user_overall == True
-    valid_users = valid_users.query("valid_user_overall == True")
+    valid_users = valid_users_with_phone.query("valid_user_overall == True")
 
     mood_valid_df = mood_df.merge(
-        valid_users[["userid", "valid_user_overall"]],
+        valid_users_with_phone[["userid", "valid_user_overall"]],
         on="userid",
         how="inner",
     )
 
-    mood_valid_df.head(15), valid_users["userid"].nunique()
+    mood_valid_df.head(100000), valid_users["userid"].nunique()
     return (mood_valid_df,)
 
 
