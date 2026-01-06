@@ -156,6 +156,25 @@ def _(mood_df):
 
 
 @app.cell
+def _(mood_df_sorted, pd):
+    dfs = []
+    for id in mood_df_sorted["userid"].unique():
+        id_df = mood_df_sorted[mood_df_sorted["userid"] == id].copy()
+        id_df["latent_prev"] = id_df["latent_var"].shift(1)
+        id_df["latent_change"] = id_df["latent_var"] - id_df["latent_prev"]
+        dfs.append(id_df)
+
+    df_mood_latent = pd.concat(dfs, axis=0)
+    return (df_mood_latent,)
+
+
+@app.cell
+def _(df_mood_latent):
+    df_mood_latent # use this dataset for all later use of the 
+    return
+
+
+@app.cell
 def _(mood_df_sorted):
     mood_df_sorted["latent_prev"] = mood_df_sorted["latent_var"].shift(1)
     mood_df_sorted["latent_change"] = mood_df_sorted["latent_var"] - mood_df_sorted["latent_prev"]
