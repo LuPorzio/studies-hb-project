@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.19.2"
 app = marimo.App(width="medium")
 
 
@@ -10,7 +10,9 @@ def _():
     import pandas as pd
     import numpy as np
     from pathlib import Path
-    return Path, mo, pd
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    return Path, mo, pd, plt
 
 
 @app.cell
@@ -249,13 +251,13 @@ def _(appuse_df, valid_overall):
     # CHANGED ON 05/01
     # Get unique users who actually have phone logs
     users_with_phone_data = set(appuse_df["userid"].unique())
-    
+
     # Filter valid_overall to only include those who also have phone data
     valid_users_with_phone = valid_overall[
         (valid_overall["id"].isin(users_with_phone_data)) & 
         (valid_overall["valid_user_overall"] == True)
     ].rename(columns={"id": "userid"})
-    
+
     valid_users_with_phone.head(100000000)
     return (valid_users_with_phone,)
 
@@ -398,7 +400,10 @@ def _(mood_interval_df, pd):
 
 
 @app.cell
-def _():
+def _(mo):
+    mo.md(r"""
+    # Preparation App-Use
+    """)
     return
 
 
@@ -414,6 +419,30 @@ def _(mo):
       * other: tutto il resto
     "\"\"
     """)
+    return
+
+
+@app.cell
+def _(appuse_df, plt):
+    # Extract the complete list of unique app names
+    # Based on the file structure, the column is typically named 'App' or 'applicationname'
+    app_column = 'App' if 'App' in appuse_df.columns else 'applicationname'
+    unique_apps = appuse_df[app_column].unique()
+
+    # Sort and print the full list
+    unique_apps.sort()
+    print(f"Total Unique Apps: {len(unique_apps)}")
+    for app in unique_apps:
+        print(app)
+
+    # Optional: Visualize the top 20 most frequent apps in the dataset
+
+    appuse_df[app_column].value_counts().head(20).plot(kind='barh', color='skyblue')
+    plt.title('Top 20 Apps by Usage Frequency')
+    plt.xlabel('Frequency')
+    plt.ylabel('App Name')
+    plt.gca().invert_yaxis()
+    plt.show()
     return
 
 
@@ -484,48 +513,134 @@ def _(appuse_df, pd):
 
 @app.cell
 def _():
-    #controllo
+    """
+    Cella 5 – Preparazione app use:
+    - togliamo 'android' (processo di sistema)
+    - convertiamo timestamp in datetime
+    - creiamo la macro-categoria:
+      * communication: chat, chiamate, email
+      * social: social network, tiktok, ecc.
+      * other: tutto il resto
+    """
+
+    def process_app_usage_verified(appuse_df):
+        # Verified category map based on unique strings in appuseIT_class_17_11.parquet
+        category_map = {
+            'SOCIAL': ['instagram', 'facebook', 'tiktok', 'reddit', 'linkedin', 'snapchat', 'weverse', 'tinder', 'badoo', 'twitter'],
+            'COMMUNICATION': ['whatsapp', 'telegram', 'gmail', 'slack', 'messenger', 'discord', 'outlook', 'protonmail', 'yahoo', "email"],
+            'ENTERTAINMENT': ['youtube', 'spotify', 'netflix', 'twitch', 'kindle', 'disney', 'infinitytv', 'audiobook', 'shazam'],
+            'PRODUCTIVITY': ['microsoft', 'adobe', 'zoom', 'teams', 'classroom'],
+            'TRAVEL': ['maps', 'ryanair', 'flixbus', 'booking', 'uber', 'airbnb', 'meteo', 'komoot', 'trentino', 'italotreno', 'trenitalia'],
+            'GAMING': ['puzzle', 'game', 'candycrush', 'chess', 'escape', 'clash', 'Briscola', 'BurracoOnline', 'Scopa'],
+            'NEWS': ['bbc news', 'tg.la7', 'tg5', 'skytg24', 'radio24', 'magazines', 'newspaper', 'corriere'],
+            'FINANCE': ['paypal', 'revolut', 'satispay', 'bitcoin', 'mypayroll', 'scrigno', 'fineco', 'wallet', 'crypto', 'bank', 'posteitaliane', 'banca']
+        }
+
+        def categorize_strict(app_name):
+            app_lower = str(app_name).lower()
+            for category, keywords in category_map.items():
+                if any(kw in app_lower for kw in keywords):
+                    return category
+            # If it doesn't match any of the 8, return None to DISCARD
+            return None
+
+        # Apply categorization and explicitly DROP all unmapped apps
+        appuse_df['research_category'] = appuse_df['applicationname'].apply(categorize_strict)
+        filtered_df = appuse_df.dropna(subset=['research_category']).copy()
+
+        # Create the wide table for the final dataset merge
+        usage_wide = (
+            filtered_df.groupby(["userid", "research_category"])
+            .size()
+            .unstack(fill_value=0)
+        )
+    
+        # Standardize column names to: use_social, use_communication, etc.
+        usage_wide.columns = [f"use_{col.lower()}" for col in usage_wide.columns]
+    
+        return usage_wide, filtered_df
+    return (process_app_usage_verified,)
+
+
+@app.cell
+def _(appuse_df, process_app_usage_verified):
+    _usage_wide, filtered_df = process_app_usage_verified(appuse_df)
+    return (filtered_df,)
+
+
+@app.cell
+def _(filtered_df):
+    # 2. Extract unique app names that were NOT discarded
+    # We sort them to make the list easier to read
+    kept_app_names = sorted(filtered_df['applicationname'].unique())
+
+    # 3. Display the results
+    print(f"Total Unique Apps Kept: {len(kept_app_names)}")
+    print("-" * 30)
+    for name in kept_app_names:
+        print(name)
+
+    # Grouping the unique names by their assigned research category
+    grouped_apps = filtered_df.groupby('research_category')['applicationname'].unique()
+
+    for category, apps in grouped_apps.items():
+        print(f"\n[ CATEGORY: {category} ]")
+        # Sort the apps within each category for clarity
+        for a in sorted(apps):
+            print(f"  - {a}")
     return
 
 
 @app.cell
-def _(appuse_prepped):
-    check_apps = appuse_prepped[
-        appuse_prepped["applicationname"].isin([
-            "com.whatsapp",
-            "org.telegram.messenger",
-            "com.instagram.android",
-            "com.facebook.katana",
-            "com.twitter.android"
+def _(filtered_df, plt):
+    def visualize_results(filtered_df, plt):
+        # 1. Visualize Overall Category Distribution
+        def plot_distribution(df):
+            # We use a unique name for the figure to avoid global collisions
+            fig_dist, ax_dist = plt.subplots(figsize=(10, 6))
+            category_counts = df['research_category'].value_counts()
+            category_counts.plot(kind='bar', color='teal', ax=ax_dist)
+        
+            ax_dist.set_title('Distribution of Smartphone Use by Research Category')
+            ax_dist.set_xlabel('Category')
+            ax_dist.set_ylabel('Number of Logs')
+            plt.xticks(rotation=45)
+            ax_dist.grid(axis='y', linestyle='--', alpha=0.7)
+            plt.tight_layout()
+            return fig_dist
+
+        # 2. Visualize Top Apps per Category (Verification)
+        def plot_top_apps(df):
+            categories_list = sorted(df['research_category'].unique())
+            # Using a unique name for this specific figure and axes grid
+            fig_grid, axes_grid = plt.subplots(nrows=4, ncols=2, figsize=(15, 18))
+            axes_flat = axes_grid.flatten()
+
+            for idx, cat_name in enumerate(categories_list):
+                # Verify the classification of apps like 'WPS Office' or 'Scrigno'
+                top_ten = df[df['research_category'] == cat_name]['applicationname'].value_counts().head(10)
+                top_ten.plot(kind='barh', ax=axes_flat[idx], color='skyblue')
+                axes_flat[idx].set_title(f'Top Apps in {cat_name}')
+                axes_flat[idx].invert_yaxis()
+                axes_flat[idx].set_xlabel('Frequency')
+
+            # Remove empty subplots if you have fewer than 8 categories
+            for j in range(idx + 1, len(axes_flat)):
+                fig_grid.delaxes(axes_flat[j])
+
+            plt.tight_layout()
+            return fig_grid
+
+        # Display both plots in the marimo UI by returning them as a vertical stack
+        import marimo as mo
+        return mo.vstack([
+            mo.md("### Category Distribution"),
+            plot_distribution(filtered_df),
+            mo.md("### Top Apps per Category Verification"),
+            plot_top_apps(filtered_df)
         ])
-    ][["applicationname", "macro_cat"]].drop_duplicates()
 
-    check_apps
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _(appuse_prepped):
-    """
-    Top app con macro-categoria:
-    - controlliamo che la classificazione social / communication / other abbia senso
-    sulle app più usate.
-    """
-
-    top_apps_with_macro = (
-        appuse_prepped
-        .groupby(["applicationname", "macro_cat"], as_index=False)
-        .agg(n_records=("userid", "size"))
-        .sort_values("n_records", ascending=False)
-        .head(50)
-    )
-
-    top_apps_with_macro
+    visualize_results(filtered_df, plt)
     return
 
 
