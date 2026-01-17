@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.1"
+__generated_with = "0.19.4"
 app = marimo.App(width="medium")
 
 
@@ -12,7 +12,9 @@ def _():
     import seaborn as sns
     import altair as alt
     from pathlib import Path
-    return Path, alt, mo, pd
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    return Path, alt, mo, pd, plt, sns
 
 
 @app.cell
@@ -30,13 +32,27 @@ def _(mo):
 
 
 @app.cell
+def _(mo):
+    mo.md(r"""
+ 
+    """)
+    return
+
+
+@app.cell
 def _(Path, pd):
     # --- 1. Load data ---
     data_path = Path("../data/socio_demo_IT.dta")
     socio_df = pd.read_stata(data_path)
 
-    socio_df.head()
+    socio_df.head(2999999)
     return data_path, socio_df
+
+
+@app.cell
+def _(socio_df):
+    len(socio_df["userid"].unique())
+    return
 
 
 @app.cell
@@ -209,12 +225,6 @@ def _(mo):
 
 @app.cell
 def _(socio_df_clean):
-    socio_df_clean["gender"].value_counts(dropna=False) if "gender" in socio_df_clean.columns else None
-    return
-
-
-@app.cell
-def _(socio_df_clean):
     socio_df_clean["nationality"].value_counts(dropna=False).head(20) if "nationality" in socio_df_clean.columns else None
     return
 
@@ -222,18 +232,6 @@ def _(socio_df_clean):
 @app.cell
 def _(socio_df_clean):
     socio_df_clean["department"].value_counts(dropna=False).head(20) if "department" in socio_df_clean.columns else None
-    return
-
-
-@app.cell
-def _(socio_df_clean):
-    socio_df_clean["degree"].value_counts(dropna=False) if "degree" in socio_df_clean.columns else None
-    return
-
-
-@app.cell
-def _(socio_df_clean):
-    socio_df_clean["cohort"].value_counts(dropna=False).sort_index() if "cohort" in socio_df_clean.columns else None
     return
 
 
@@ -270,16 +268,16 @@ def _(mo):
 
 
 @app.cell
-def _(alt, socio_df_clean):
+def _(alt, socio_df_clean_reduced):
 
     # choose some key scales if present
     key_scales = [c for c in ["extraversion", "agreeableness", "conscientiousness",
-                                "neuroticism", "openness"] if c in socio_df_clean.columns]
+                                "neuroticism", "openness"] if c in socio_df_clean_reduced.columns]
 
     charts = []
     for c in key_scales:
         chart = (
-            alt.Chart(socio_df_clean)
+            alt.Chart(socio_df_clean_reduced)
             .mark_bar()
             .encode(
                 x=alt.X(c, bin=alt.Bin(maxbins=12), title=c),
@@ -290,7 +288,245 @@ def _(alt, socio_df_clean):
         charts.append(chart)
 
     alt.vconcat(*charts) if charts else None
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Socio-Demographic plots on the full aggregated dataset (event_df) with only our selected sample
+    """)
+    return
+
+
+@app.cell
+def _(socio_df_clean):
+    ids_filtered_sample = [
+        0,  1,  3,  4,   5,   6,   8,   9,  12,  13,  15,  18,  19,
+            20,  24,  26,  28,  30,  32,  33,  34,  41,  44,  45,  48,  52,
+            55,  57,  58,  59,  60,  61,  65,  66,  70,  73,  75,  76,  79,
+            80,  82,  83,  87,  89,  91,  92,  97,  98,  99, 100, 105, 106,
+           107, 109, 111, 112, 113, 114, 118, 119, 124, 126, 128, 130, 131,
+           132, 134, 136, 141, 144, 146, 148, 151, 153, 155, 158, 160, 161,
+           162, 163, 165, 166, 167, 169, 173, 176, 177, 182, 185, 188, 191,
+           194, 195, 196, 197, 198, 199, 200, 202, 203, 204, 206, 208, 209,
+           210, 212, 215, 216, 223, 224, 225, 229, 233, 239, 243, 245, 250,
+           251, 252, 253, 254, 255, 256, 258, 259, 262
+           ]
+
+    socio_df_clean_reduced = socio_df_clean[socio_df_clean["userid"].isin(ids_filtered_sample)]
+    return (socio_df_clean_reduced,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Gender Distribution by Department: Check if certain departments have gender imbalances
+    """)
+    return
+
+
+@app.cell
+def _(plt, sns, socio_df_clean_reduced):
+    def _(socio_df_clean_reduced, plt, sns):
+        # Gender distribution across top departments
+        top_depts = socio_df_clean_reduced["department"].value_counts().head(10).index
+
+        plt.figure(figsize=(12, 6))
+        gender_dept = socio_df_clean_reduced[socio_df_clean_reduced["department"].isin(top_depts)]
+
+        sns.countplot(data=gender_dept, y="department", hue="gender", 
+                      order=top_depts)
+        plt.title("Gender Distribution Across Top 10 Departments")
+        plt.xlabel("Count")
+        plt.tight_layout()
+        plt.show()
+        return
+
+    _(socio_df_clean_reduced, plt, sns)
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Cohort Distribution by Degree Type: Understand age structure across degree programs
+    """)
+    return
+
+
+@app.cell
+def _(pd, plt, sns, socio_df_clean_reduced):
+    def _(socio_df_clean_reduced, plt, sns):
+        plt.figure(figsize=(10, 6))
+
+        # Create crosstab for heatmap
+        cohort_degree = pd.crosstab(
+            socio_df_clean_reduced["cohort_group"], 
+            socio_df_clean_reduced["degree"],
+            normalize="columns"
+        ) * 100
+
+        sns.heatmap(cohort_degree, annot=True, fmt=".1f", cmap="YlOrRd")
+        plt.title("Cohort Group Distribution by Degree Type (%)")
+        plt.ylabel("Cohort Group")
+        plt.xlabel("Degree Type")
+        plt.tight_layout()
+        plt.show()
+        return
+
+    _(socio_df_clean_reduced, plt, sns)
+
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Big Five Personality Correlations: Explore relationships between personality dimensions
+    """)
+    return
+
+
+@app.cell
+def _(plt, sns, socio_df_clean_reduced):
+
+    def _(socio_df_clean_reduced, plt, sns):
+        big5_cols = ["extraversion", "agreeableness", "conscientiousness", 
+                     "neuroticism", "openness"]
+
+        # Check which columns exist
+        available_big5 = [c for c in big5_cols if c in socio_df_clean_reduced.columns]
+
+        if len(available_big5) >= 2:
+            corr_matrix = socio_df_clean_reduced[available_big5].corr()
+
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(corr_matrix, annot=True, fmt=".2f", 
+                        cmap="coolwarm", center=0, vmin=-1, vmax=1,
+                        square=True)
+            plt.title("Big Five Personality Dimensions - Correlation Matrix")
+            plt.tight_layout()
+            plt.show()
+        return
+
+    _(socio_df_clean_reduced, plt, sns)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Personality Profiles by Gender: Compare personality dimensions across genders
+    """)
+    return
+
+
+@app.cell
+def _(pd, plt, sns, socio_df_clean_reduced):
+    def _(socio_df_clean_reduced, plt, sns, pd):
+        big5_cols = ["extraversion", "agreeableness", "conscientiousness", 
+                     "neuroticism", "openness"]
+        available_big5 = [c for c in big5_cols if c in socio_df_clean_reduced.columns]
+
+        if len(available_big5) >= 2 and "gender" in socio_df_clean_reduced.columns:
+            # Melt data for grouped plot
+            plot_df = socio_df_clean_reduced[available_big5 + ["gender"]].melt(
+                id_vars="gender",
+                var_name="Trait",
+                value_name="Score"
+            )
+
+            plt.figure(figsize=(12, 6))
+            sns.violinplot(data=plot_df, x="Trait", y="Score", hue="gender", split=True)
+            plt.title("Big Five Personality Profiles by Gender")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.show()
+        return
+
+    _(socio_df_clean_reduced, plt, sns, pd)
+    return
+
+
+@app.cell
+def _(plt, socio_df_clean_reduced):
+    def plot_gender_distribution(socio_df_clean_reduced):
+        plt.figure(figsize=(8, 8))
+        gender_counts = socio_df_clean_reduced['gender'].value_counts()
     
+        plt.pie(gender_counts, labels=gender_counts.index, autopct='%1.1f%%', 
+                colors=['#ff9999','#66b3ff'], startangle=140, explode=(0.05, 0))
+    
+        plt.title("Overall Gender Distribution", fontsize=14, fontweight='bold')
+        plt.show()
+
+    plot_gender_distribution(socio_df_clean_reduced)
+    return
+
+
+@app.cell
+def _(pd, plt, socio_df_clean_reduced):
+    def plot_gender_by_degree(socio_df_clean_reduced):
+        # Create a cross-tabulation of gender and degree
+        gender_degree = pd.crosstab(socio_df_clean_reduced['degree'], socio_df_clean_reduced['gender'], normalize='index') * 100
+    
+        gender_degree.plot(kind='bar', stacked=True, figsize=(12, 6), color=['#ff9999','#66b3ff'])
+    
+        plt.title("Gender Composition by Degree Type (%)", fontsize=14, fontweight='bold')
+        plt.ylabel("Percentage (%)")
+        plt.xlabel("Degree Type")
+        plt.legend(title="Gender", bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+
+    plot_gender_by_degree(socio_df_clean_reduced)
+    return
+
+
+@app.cell
+def _(plt, sns, socio_df_clean_reduced):
+    def plot_top_nationalities(socio_df_clean_reduced):
+        if 'nationality' in socio_df_clean_reduced.columns:
+            plt.figure(figsize=(10, 6))
+            top_10_nat = socio_df_clean_reduced['nationality'].value_counts().head(10)
+        
+            sns.barplot(x=top_10_nat.values, y=top_10_nat.index, palette="viridis")
+        
+            plt.title("Top 10 Nationalities in Sample", fontsize=14, fontweight='bold')
+            plt.xlabel("Number of Students")
+            plt.ylabel("Nationality")
+            plt.grid(axis='x', linestyle='--', alpha=0.6)
+            plt.tight_layout()
+            plt.show()
+
+    plot_top_nationalities(socio_df_clean_reduced)
+    return
+
+
+@app.cell
+def _(plt, sns, socio_df_clean_reduced):
+    def plot_department_volume(socio_df_clean_reduced):
+        if 'department' in socio_df_clean_reduced.columns:
+            plt.figure(figsize=(14, 7))
+            dept_counts = socio_df_clean_reduced['department'].value_counts().head(15) # Top 15 for readability
+        
+            sns.barplot(x=dept_counts.index, y=dept_counts.values, palette="magma")
+        
+            plt.title("Top 15 Departments by Participation", fontsize=14, fontweight='bold')
+            plt.xlabel("Department Name")
+            plt.ylabel("Number of Participants")
+            plt.xticks(rotation=90)
+            plt.tight_layout()
+            plt.show()
+
+    plot_department_volume(socio_df_clean_reduced)
     return
 
 
